@@ -168,8 +168,7 @@ def main(hparams):
 # ==========================================================
 if __name__ == "__main__":
 
-    root_parser = argparse.ArgumentParser(description="FCVAE Training Script")
-    parser = MyVAE.add_model_specific_args(root_parser)
+    parser = argparse.ArgumentParser(description="FCVAE Training Script")
 
     # ----------------------------
     # DATA
@@ -187,7 +186,18 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, default=0)
 
     # ----------------------------
-    # OPTIONAL (EXPOSED FIXES)
+    # MODEL PARAMS (CRITICAL)
+    # ----------------------------
+    parser.add_argument("--window", type=int, default=64)
+    parser.add_argument("--latent_dim", type=int, default=8)
+    parser.add_argument("--learning_rate", type=float, default=5e-4)
+
+    parser.add_argument("--d_model", type=int, default=256)
+    parser.add_argument("--d_inner", type=int, default=512)
+    parser.add_argument("--n_head", type=int, default=8)
+
+    # ----------------------------
+    # CVAE REQUIRED PARAMS
     # ----------------------------
     parser.add_argument("--condition_emb_dim", type=int, default=16)
     parser.add_argument("--kernel_size", type=int, default=5)
@@ -195,8 +205,18 @@ if __name__ == "__main__":
     parser.add_argument("--dropout_rate", type=float, default=0.1)
     parser.add_argument("--mcmc_rate", type=float, default=5)
 
+    # ----------------------------
+    # DATA PROCESSING
+    # ----------------------------
     parser.add_argument("--data_pre_mode", type=int, default=0)
     parser.add_argument("--sliding_window_size", type=int, default=1)
+
+    # ----------------------------
+    # AUGMENTATION
+    # ----------------------------
+    parser.add_argument("--missing_data_rate", type=float, default=0.01)
+    parser.add_argument("--point_ano_rate", type=float, default=0.05)
+    parser.add_argument("--seg_ano_rate", type=float, default=0.1)
 
     # ----------------------------
     # TEST MODE
@@ -206,11 +226,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # ==========================================================
-    # TEST-ONLY MODE
-    # ==========================================================
     if args.only_test == 1:
-
         if args.ckpt_path is None:
             raise ValueError("You must provide --ckpt_path for testing.")
 
