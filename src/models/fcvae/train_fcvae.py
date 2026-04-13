@@ -26,6 +26,44 @@ torch.backends.cudnn.benchmark = False
 
 
 # ==========================================================
+# REQUIRED DEFAULTS (CRITICAL FIX)
+# ==========================================================
+def ensure_required_hparams(hparams):
+    """
+    Injects ALL missing hyperparameters required by CVAE.
+    Prevents runtime crashes due to missing attributes.
+    """
+
+    defaults = {
+        # ======================
+        # CVAE CORE
+        # ======================
+        "condition_emb_dim": 16,
+        "kernel_size": 5,
+        "stride": 1,
+        "dropout_rate": 0.1,
+        "mcmc_rate": 5,
+        # ======================
+        # DATA PROCESSING
+        # ======================
+        "data_pre_mode": 0,
+        "sliding_window_size": 1,
+        # ======================
+        # AUGMENTATION
+        # ======================
+        "missing_data_rate": 0.01,
+        "point_ano_rate": 0.05,
+        "seg_ano_rate": 0.1,
+    }
+
+    for key, val in defaults.items():
+        if not hasattr(hparams, key):
+            setattr(hparams, key, val)
+
+    return hparams
+
+
+# ==========================================================
 # MAIN
 # ==========================================================
 def main(hparams):
@@ -36,7 +74,12 @@ def main(hparams):
     hparams.model_type = "fcvae"
 
     # ----------------------------
-    # Experiment setup (FAULT-AGNOSTIC)
+    # FIX: Inject missing params
+    # ----------------------------
+    hparams = ensure_required_hparams(hparams)
+
+    # ----------------------------
+    # Experiment setup
     # ----------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -93,7 +136,7 @@ def main(hparams):
     )
 
     # ----------------------------
-    # DATA (FULL MULTI-FAULT SUPPORT)
+    # DATA
     # ----------------------------
     train_loader, val_loader, test_loader = get_dataloaders(
         data_dir=hparams.data_dir,
@@ -129,19 +172,31 @@ if __name__ == "__main__":
     parser = MyVAE.add_model_specific_args(root_parser)
 
     # ----------------------------
-    # REQUIRED DATA INPUTS (FAULT-AGNOSTIC)
+    # DATA
     # ----------------------------
     parser.add_argument("--data_dir", type=str, required=True)
     parser.add_argument("--train_dir", type=str, required=True)
     parser.add_argument("--test_dir", type=str, required=True)
 
     # ----------------------------
-    # TRAINING PARAMS
+    # TRAINING
     # ----------------------------
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--max_epoch", type=int, default=50)
     parser.add_argument("--gpu", type=int, default=0)
+
+    # ----------------------------
+    # OPTIONAL (EXPOSED FIXES)
+    # ----------------------------
+    parser.add_argument("--condition_emb_dim", type=int, default=16)
+    parser.add_argument("--kernel_size", type=int, default=5)
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--dropout_rate", type=float, default=0.1)
+    parser.add_argument("--mcmc_rate", type=float, default=5)
+
+    parser.add_argument("--data_pre_mode", type=int, default=0)
+    parser.add_argument("--sliding_window_size", type=int, default=1)
 
     # ----------------------------
     # TEST MODE
@@ -160,6 +215,7 @@ if __name__ == "__main__":
             raise ValueError("You must provide --ckpt_path for testing.")
 
         args.model_type = "fcvae"
+        args = ensure_required_hparams(args)
 
         print(f"Loading checkpoint: {args.ckpt_path}")
 
@@ -176,7 +232,6 @@ if __name__ == "__main__":
         )
 
         trainer = Trainer(accelerator="auto", devices=1)
-
         trainer.test(model, dataloaders=test_loader)
 
     else:
