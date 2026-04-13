@@ -1,4 +1,5 @@
 # src/models/fcvae/model.py
+# src/models/fcvae/model.py
 import torch
 import torch.nn as nn
 import numpy as np
@@ -26,66 +27,87 @@ class MyVAE(LightningModule):
         self.hp = hparams
         self.vae = CVAE(self.hp)
 
+        # tracking
+        self.train_step_count = 0
+        self.val_losses = []
+
     # ==========================================================
     # Forward
     # ==========================================================
     def forward(self, x, mode, mask):
-        """
-        Input:
-            FCVAE loader gives [B, 1, T]
-        Convert to:
-            [B, T, 1] (expected by CVAE)
-        """
         if x.dim() == 3 and x.shape[1] == 1:
             x = x.transpose(1, 2)
-
         return self.vae(x, mode, mask)
 
     # ==========================================================
     # Loss
     # ==========================================================
     def compute_loss(self, x, y_all, z_all):
-        # mask = valid (non-anomaly AND non-missing)
         mask = (~(y_all.bool() | z_all.bool())).float()
-
         _, _, _, _, _, loss = self.forward(x, "train", mask)
         return loss
 
     # ==========================================================
     # Training
     # ==========================================================
+    def on_train_epoch_start(self):
+        print(f"\n[Epoch {self.current_epoch}] Training start...")
+
     def training_step(self, batch, batch_idx):
         x, y, z = batch
         x, y, z = self.batch_data_augmentation(x, y, z)
 
         loss = self.compute_loss(x, y, z)
 
+        self.train_step_count += 1
+
+        # 🔥 Print every 50 steps (adjust as needed)
+        if batch_idx % 50 == 0:
+            print(
+                f"[Epoch {self.current_epoch} | Step {batch_idx}] "
+                f"Train Loss: {loss.item():.4f}"
+            )
+
         self.log("train_loss", loss, prog_bar=True)
         return loss
 
+    def on_train_epoch_end(self):
+        print(f"[Epoch {self.current_epoch}] Training complete.")
+
+    # ==========================================================
+    # Validation
+    # ==========================================================
     def validation_step(self, batch, batch_idx):
         x, y, z = batch
         loss = self.compute_loss(x, y, z)
 
+        self.val_losses.append(loss.item())
+
         self.log("val_loss", loss, prog_bar=True)
         return loss
+
+    def on_validation_epoch_end(self):
+        if len(self.val_losses) > 0:
+            avg_val_loss = np.mean(self.val_losses)
+            print(f"[Epoch {self.current_epoch}] Validation Loss: {avg_val_loss:.4f}")
+            self.val_losses.clear()
 
     # ==========================================================
     # Testing
     # ==========================================================
+    def on_test_start(self):
+        print("\n--- FCVAE Testing Started ---")
+
     def test_step(self, batch, batch_idx):
         x, y_all, z_all = batch
         y = y_all[:, -1].unsqueeze(1)
 
         with torch.no_grad():
-            # MCMC inference (returns x_refined, likelihood)
             x_recon, prob = self.forward(x, "test", z_all)
 
-            # reconstruction stats (train mode forward)
             mask = (~z_all.bool()).float()
             mu_x, var_x, _, _, _, _ = self.forward(x, "train", mask)
 
-        # anomaly score = negative log-likelihood (last timestep)
         score = -prob[:, :, -1]
 
         return {
@@ -98,6 +120,8 @@ class MyVAE(LightningModule):
         }
 
     def test_epoch_end(self, outputs):
+        print("\n--- Aggregating FCVAE Results ---")
+
         y = torch.cat([o["y"] for o in outputs]).numpy().flatten()
         score = torch.cat([o["score"] for o in outputs]).numpy().flatten()
 
@@ -119,15 +143,14 @@ class MyVAE(LightningModule):
         else:
             k = 7
 
-        # Safe AUC (avoid crash if only one class)
         try:
             auc = roc_auc_score(y, score)
         except:
             auc = float("nan")
 
-        f1_d, prec_d, rec_d, pred_d = delay_f1(score, y, k)
-        f1_b, prec_b, rec_b, pred_b = best_f1(score, y)
-        f1_raw, prec_raw, rec_raw, pred_raw = best_f1_without_pointadjust(score, y)
+        f1_d, _, _, _ = delay_f1(score, y, k)
+        f1_b, _, _, _ = best_f1(score, y)
+        f1_raw, _, _, _ = best_f1_without_pointadjust(score, y)
 
         print("\n--- FCVAE Results ---")
         print(f"AUC: {auc:.4f}")
@@ -135,7 +158,6 @@ class MyVAE(LightningModule):
         print(f"Delay F1: {f1_d:.4f}")
         print(f"Raw F1: {f1_raw:.4f}")
 
-        # Save CSV
         df = pd.DataFrame(
             {
                 "x": x.flatten(),
@@ -144,8 +166,6 @@ class MyVAE(LightningModule):
                 "var": var_x.flatten(),
                 "label": y,
                 "score": score,
-                "pred_delay": pred_d,
-                "pred_best": pred_b,
             }
         )
 
@@ -180,26 +200,3 @@ class MyVAE(LightningModule):
         )
 
         return x, y, z
-
-    # ==========================================================
-    # CLI Args
-    # ==========================================================
-    @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = parent_parser.add_argument_group("MyVAE")
-
-        parser.add_argument("--window", type=int, default=64)
-        parser.add_argument("--latent_dim", type=int, default=8)
-        parser.add_argument("--learning_rate", type=float, default=5e-4)
-
-        parser.add_argument("--missing_data_rate", type=float, default=0.01)
-        parser.add_argument("--point_ano_rate", type=float, default=0.05)
-        parser.add_argument("--seg_ano_rate", type=float, default=0.1)
-
-        parser.add_argument("--d_model", type=int, default=256)
-        parser.add_argument("--d_inner", type=int, default=512)
-        parser.add_argument("--n_head", type=int, default=8)
-
-        parser.add_argument("--use_label", type=int, default=0)
-
-        return parent_parser
