@@ -156,7 +156,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--models",
         nargs="+",
-        default=["timegan", "fcvae"],
+        default=["timegan", "fcvae", "iforest", "lstm_ae"],
         help="List of models to evaluate",
     )
 

@@ -1,32 +1,53 @@
 # src/baselines/isolation_forest.py
 import numpy as np
 from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
 
-def train_isolation_forest(train_x, contamination=0.01):
-    """
-    Standard statistical baseline.
-    Note: Isolation Forest expects 2D input (Samples x Features).
-    We flatten the windowed temporal data for this baseline.
-    """
-    n_samples, n_window, n_features = train_x.shape
-    train_flat = train_x.reshape(n_samples, -1)
-    
-    print(f"Training Isolation Forest on {n_samples} samples...")
-    model = IsolationForest(
-        n_estimators=100,
-        contamination=contamination,
-        random_state=42,
-        n_jobs=-1
-    )
-    model.fit(train_flat)
-    return model
 
-def get_iforest_scores(model, test_x):
+class IsolationForestBaseline:
     """
-    Returns anomaly scores. Higher = more anomalous.
+    Stronger, fairer baseline:
+    - scale features
+    - flatten windows (standard baseline approach)
+    - normalized anomaly score output
     """
-    n_samples = test_x.shape[0]
-    test_flat = test_x.reshape(n_samples, -1)
-    
-    raw_scores = model.decision_function(test_flat)
-    return -raw_scores
+
+    def __init__(self, contamination=0.01):
+        self.model = IsolationForest(
+            n_estimators=200,
+            contamination=contamination,
+            random_state=42,
+            n_jobs=-1,
+        )
+        self.scaler = StandardScaler()
+
+    def fit(self, train_x):
+        """
+        train_x: (N, T, F)
+        """
+        n = train_x.shape[0]
+        x = train_x.reshape(n, -1)
+
+        x = self.scaler.fit_transform(x)
+
+        print(f"[IFOREST] Training on {x.shape}")
+        self.model.fit(x)
+
+    def score(self, test_x):
+        """
+        Returns: higher = more anomalous (0-1 normalized)
+        """
+        n = test_x.shape[0]
+        x = test_x.reshape(n, -1)
+
+        x = self.scaler.transform(x)
+
+        raw = self.model.decision_function(x)
+
+        # convert to anomaly score
+        scores = -raw
+
+        # normalize for fair comparison
+        scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
+
+        return scores

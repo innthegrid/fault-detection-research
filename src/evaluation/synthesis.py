@@ -1,5 +1,4 @@
 # src/evaluation/synthesis.py
-# src/evaluation/synthesis.py
 import numpy as np
 import os
 
