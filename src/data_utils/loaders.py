@@ -27,22 +27,17 @@ def load_all_series(data_dir, data_name):
     elif os.path.isdir(full_path):
         all_values = []
 
-        files = sorted(
-            [
-                f
-                for f in os.listdir(full_path)
-                if f.endswith(".dat") or f.endswith(".csv")
-            ]
-        )
+        for root, _, files in os.walk(full_path):
+            for f in files:
+                if f.endswith(".dat") or f.endswith(".csv"):
+                    df = pd.read_csv(os.path.join(root, f), sep=",", header=None)
+                    all_values.append(df.values.flatten().astype(float))
 
-        if len(files) == 0:
+        if len(all_values) == 0:
             raise ValueError(f"No valid data files found in directory: {full_path}")
 
-        for f in files:
-            df = pd.read_csv(os.path.join(full_path, f), sep=",", header=None)
-            all_values.append(df.values.flatten().astype(float))
-
-        return np.concatenate(all_values)
+        MAX_POINTS = 20000
+        return np.concatenate(all_values)[:MAX_POINTS]
 
     else:
         raise ValueError(f"Invalid path: {full_path}")
